@@ -1,0 +1,583 @@
+import { useState, useEffect, useRef } from "react";
+
+const PAL = [
+  { bg:'#E6F1FB', tx:'#0C447C', ac:'#378ADD', dbg:'#0C447C', dtx:'#B5D4F4', dac:'#85B7EB' },
+  { bg:'#E1F5EE', tx:'#085041', ac:'#1D9E75', dbg:'#085041', dtx:'#9FE1CB', dac:'#5DCAA5' },
+  { bg:'#EEEDFE', tx:'#3C3489', ac:'#7F77DD', dbg:'#3C3489', dtx:'#CECBF6', dac:'#AFA9EC' },
+  { bg:'#FAEEDA', tx:'#633806', ac:'#EF9F27', dbg:'#633806', dtx:'#FAC775', dac:'#EF9F27' },
+  { bg:'#FAECE7', tx:'#4A1B0C', ac:'#D85A30', dbg:'#4A1B0C', dtx:'#F5C4B3', dac:'#F0997B' },
+  { bg:'#FBEAF0', tx:'#4B1528', ac:'#D4537E', dbg:'#4B1528', dtx:'#F4C0D1', dac:'#ED93B1' },
+];
+const randomPal = () => PAL[Math.floor(Math.random() * PAL.length)];
+const unusedPal = (existing) => { const usedAc = new Set(existing.map(x=>x.pal?.ac).filter(Boolean)); const free = PAL.filter(p=>!usedAc.has(p.ac)); const pool = free.length ? free : PAL; return pool[Math.floor(Math.random()*pool.length)]; };
+const INIT = { tribes:[], squads:[], chapters:[], guilds:[], people:[], gm:[] };
+const uid = () => Math.random().toString(36).slice(2,9);
+const dedupById = arr => arr.filter((x,i,a) => a.findIndex(y=>y.id===x.id)===i);
+
+const dedupTribes = (tribes, squads) => {
+  const seen={}, idMap={}, kept=[];
+  for (const t of tribes) {
+    const key=t.name.toLowerCase().trim();
+    if (seen[key]!==undefined) idMap[t.id]=seen[key];
+    else { seen[key]=t.id; kept.push(t); }
+  }
+  return { tribes:kept, squads:squads.map(s=>idMap[s.tribeId]?{...s,tribeId:idMap[s.tribeId]}:s) };
+};
+
+const migratePerson = ({ squadId, ...p }) => ({
+  ...p, squadIds: p.squadIds?.length ? p.squadIds : (squadId ? [squadId] : []),
+});
+
+const clean = raw => {
+  const base = {
+    tribes:   dedupById(raw.tribes   || []),
+    squads:   dedupById(raw.squads   || []),
+    chapters: dedupById(raw.chapters || []),
+    guilds:   dedupById(raw.guilds   || []),
+    people:   dedupById((raw.people  || []).map(migratePerson)),
+    gm:       [...new Set(raw.gm     || [])],
+  };
+  const { tribes, squads } = dedupTribes(base.tribes, base.squads);
+  const guilds = base.guilds.map(g => g.pal ? g : {...g, pal:randomPal()});
+  return { ...base, tribes, squads, guilds };
+};
+
+const isEmptyData = d => !d || ['tribes','squads','chapters','guilds','people'].every(k=>d[k].length===0);
+
+const storageGet = (key, shared) => Promise.race([
+  window.storage.get(key, shared),
+  new Promise((_, rej) => setTimeout(()=>rej(new Error('timeout')), 2500)),
+]);
+
+// Solid modal background that works in both light and dark mode
+const modalBg  = dk => dk ? '#1e1e1e' : '#ffffff';
+const modalBdr = dk => dk ? '#444'    : '#e0e0e0';
+const bodyTx   = dk => dk ? '#f0f0f0' : '#111111';
+const mutedTx  = dk => dk ? '#aaaaaa' : '#555555';
+const inputBg  = dk => dk ? '#2a2a2a' : '#ffffff';
+const inputBdr = dk => dk ? '#555'    : '#cccccc';
+
+function EditableLabel({ value, onSave, dk, style={} }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value);
+  const ref = useRef();
+  useEffect(()=>{ if(editing) ref.current?.select(); },[editing]);
+  useEffect(()=>{ setVal(value); },[value]);
+  const commit = () => { setEditing(false); const v=val.trim(); if(v&&v!==value) onSave(v); else setVal(value); };
+  if (editing) return (
+    <input ref={ref} value={val} onChange={e=>setVal(e.target.value)} onBlur={commit}
+      onKeyDown={e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape'){setVal(value);setEditing(false);} }}
+      style={{fontSize:'inherit',fontFamily:'inherit',fontWeight:'inherit',
+        color: dk ? '#f0f0f0' : '#111',
+        background: dk ? '#2a2a2a' : '#ffffff',
+        border: `1px solid ${dk ? '#666' : '#bbb'}`,
+        borderRadius:4, outline:'none', padding:'1px 4px',
+        width:Math.max(60,val.length*8)+'px'}}/>
+  );
+  return <span onDoubleClick={()=>setEditing(true)} title="Double-click to edit" style={{cursor:'text',...style}}>{value}</span>;
+}
+
+function RestoreScreen({ onRestore, onStartFresh }) {
+  const [text, setText] = useState('');
+  const [err, setErr] = useState('');
+
+  const tryParsed = json => {
+    const parsed = JSON.parse(json);
+    if (!['tribes','squads','chapters','guilds','people','gm'].every(k=>Array.isArray(parsed[k]))) throw new Error();
+    onRestore(clean(parsed));
+  };
+
+  const tryRestore = () => {
+    try { tryParsed(text.trim()); }
+    catch { setErr("Could not parse that JSON. Make sure you're pasting a full export from this app."); }
+  };
+
+  const onFile = e => {
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try { tryParsed(ev.target.result); }
+      catch { setErr("Could not read that file. Make sure it's a previously exported org-map.json."); }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  };
+
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:400,padding:'2rem',fontFamily:'var(--font-sans)'}}>
+      <div style={{width:'100%',maxWidth:440}}>
+        <p style={{margin:'0 0 6px',fontWeight:500,fontSize:15,color:'var(--color-text-primary)'}}>Restore previous data</p>
+        <p style={{margin:'0 0 12px',fontSize:13,color:'var(--color-text-secondary)'}}>Load a file or paste exported JSON, or start fresh.</p>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,padding:'8px 10px',
+          border:'0.5px solid var(--color-border-tertiary)',borderRadius:'var(--border-radius-md)',
+          background:'var(--color-background-secondary)'}}>
+          <span style={{fontSize:13,color:'var(--color-text-secondary)',flexShrink:0}}>Load file</span>
+          <input type="file" accept=".json" onChange={onFile} style={{fontSize:13,flex:1,minWidth:0}}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <div style={{flex:1,height:'0.5px',background:'var(--color-border-tertiary)'}}/>
+          <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>or paste</span>
+          <div style={{flex:1,height:'0.5px',background:'var(--color-border-tertiary)'}}/>
+        </div>
+        <textarea value={text} onChange={e=>{setText(e.target.value);setErr('');}} placeholder="Paste JSON here…"
+          style={{width:'100%',height:130,fontSize:12,fontFamily:'var(--font-mono)',padding:'8px',
+            boxSizing:'border-box',resize:'vertical',
+            background:'var(--color-background-secondary)',color:'var(--color-text-primary)',
+            border:'0.5px solid var(--color-border-tertiary)',borderRadius:'var(--border-radius-md)'}}/>
+        {err&&<p style={{margin:'4px 0 0',fontSize:12,color:'var(--color-text-danger)'}}>{err}</p>}
+        <div style={{display:'flex',gap:8,marginTop:10,justifyContent:'flex-end'}}>
+          <button onClick={onStartFresh} style={{fontSize:13}}>Start fresh</button>
+          <button onClick={tryRestore} disabled={!text.trim()} style={{fontSize:13}}>Restore from paste</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [d, setD] = useState(null);
+  const dRef = useRef(null);
+  const [phase, setPhase] = useState('loading');
+  const [tab, setTab] = useState('matrix');
+  const [modal, setModal] = useState(null);
+  const [f, setF] = useState({});
+  const [editPerson, setEditPerson] = useState(null);
+  const [dk, setDk] = useState(false);
+  const [importErr, setImportErr] = useState('');
+  const [exportJson, setExportJson] = useState('');
+  const exportRef = useRef();
+
+  useEffect(()=>{
+    const mq=window.matchMedia('(prefers-color-scheme: dark)');
+    setDk(mq.matches);
+    mq.addEventListener('change', e=>setDk(e.matches));
+  },[]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try {
+        const r=await storageGet('om-v2',true);
+        if(cancelled)return;
+        const loaded=r?clean(JSON.parse(r.value)):null;
+        if(loaded&&!isEmptyData(loaded)){ setD(loaded); dRef.current=loaded; setPhase('ready'); }
+        else setPhase('restore');
+      } catch { if(!cancelled) setPhase('restore'); }
+    })();
+    return ()=>{ cancelled=true; };
+  },[]);
+
+  useEffect(()=>{ dRef.current=d; },[d]);
+
+  const save = nd => {
+    const c=clean(nd); setD(c); dRef.current=c;
+    try { window.storage.set('om-v2',JSON.stringify(c),true); } catch {}
+  };
+
+  const handleRestore = data => { save(data); setPhase('ready'); };
+  const handleStartFresh = () => { save(INIT); setPhase('ready'); };
+
+  const ff = p => setF(prev=>({...prev,...p}));
+  const cl = (pal,k) => !pal?undefined:dk?pal['d'+k]:pal[k];
+  const getTribe = id => d?.tribes.find(t=>t.id===id);
+  const getSquad  = id => d?.squads.find(s=>s.id===id);
+  const rename = (col,id,name) => save({...d,[col]:d[col].map(x=>x.id===id?{...x,name}:x)});
+
+  const adds = {
+    tribe:   ()=>{ if(!f.name?.trim())return; save({...d,tribes:[...d.tribes,{id:uid(),name:f.name.trim(),pal:unusedPal(d.tribes)}]}); setModal(null); },
+    squad:   ()=>{ if(!f.name?.trim()||!f.tribeId)return; save({...d,squads:[...d.squads,{id:uid(),name:f.name.trim(),tribeId:f.tribeId}]}); setModal(null); },
+    chapter: ()=>{ if(!f.name?.trim())return; save({...d,chapters:[...d.chapters,{id:uid(),name:f.name.trim()}]}); setModal(null); },
+    guild:   ()=>{ if(!f.name?.trim())return; save({...d,guilds:[...d.guilds,{id:uid(),name:f.name.trim(),pal:unusedPal(d.guilds)}]}); setModal(null); },
+    person:  ()=>{ if(!f.name?.trim()||!f.squadIds?.length||!f.chapterId)return; save({...d,people:[...d.people,{id:uid(),name:f.name.trim(),squadIds:f.squadIds,chapterId:f.chapterId}]}); setModal(null); },
+  };
+
+  const dels = {
+    tribe: id=>{
+      const sids=d.squads.filter(s=>s.tribeId===id).map(s=>s.id);
+      const np=d.people.map(p=>({...p,squadIds:p.squadIds.filter(sid=>!sids.includes(sid))}));
+      const rm=np.filter(p=>p.squadIds.length===0).map(p=>p.id);
+      save({...d,tribes:d.tribes.filter(t=>t.id!==id),squads:d.squads.filter(s=>s.tribeId!==id),
+        people:np.filter(p=>p.squadIds.length>0),gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
+    },
+    squad: id=>{
+      const np=d.people.map(p=>({...p,squadIds:p.squadIds.filter(sid=>sid!==id)}));
+      const rm=np.filter(p=>p.squadIds.length===0).map(p=>p.id);
+      save({...d,squads:d.squads.filter(s=>s.id!==id),people:np.filter(p=>p.squadIds.length>0),
+        gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
+    },
+    chapter: id=>{
+      const pids=d.people.filter(p=>p.chapterId===id).map(p=>p.id);
+      save({...d,chapters:d.chapters.filter(c=>c.id!==id),people:d.people.filter(p=>p.chapterId!==id),
+        gm:d.gm.filter(m=>!pids.some(pid=>m.startsWith(pid+'|')))});
+    },
+    guild:  id=>save({...d,guilds:d.guilds.filter(g=>g.id!==id),gm:d.gm.filter(m=>!m.endsWith('|'+id))}),
+    person: id=>save({...d,people:d.people.filter(p=>p.id!==id),gm:d.gm.filter(m=>!m.startsWith(id+'|'))}),
+  };
+
+  const removeFromSquad = (personId, squadId) => {
+    const p=d.people.find(x=>x.id===personId); if(!p)return;
+    const newIds=p.squadIds.filter(sid=>sid!==squadId);
+    if(newIds.length===0) dels.person(personId);
+    else save({...d,people:d.people.map(x=>x.id===personId?{...x,squadIds:newIds}:x)});
+  };
+
+  const openEditPerson = p => setEditPerson({id:p.id,name:p.name,squadIds:[...p.squadIds],chapterId:p.chapterId});
+  const saveEditPerson = () => {
+    if(!editPerson.name.trim()||!editPerson.squadIds.length||!editPerson.chapterId)return;
+    save({...d,people:d.people.map(p=>p.id===editPerson.id?{...p,name:editPerson.name.trim(),squadIds:editPerson.squadIds,chapterId:editPerson.chapterId}:p)});
+    setEditPerson(null);
+  };
+  const toggleEditSquad = sid => setEditPerson(prev=>({...prev,squadIds:prev.squadIds.includes(sid)?prev.squadIds.filter(x=>x!==sid):[...prev.squadIds,sid]}));
+  const toggleGM=(pid,gid)=>{ const k=`${pid}|${gid}`; save({...d,gm:d.gm.includes(k)?d.gm.filter(m=>m!==k):[...d.gm,k]}); };
+
+  const doExport=()=>{
+    const json=JSON.stringify(dRef.current,null,2);
+    setExportJson(json); setModal('export');
+    setTimeout(()=>exportRef.current?.select(),50);
+  };
+
+  const doImport=e=>{
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try {
+        const parsed=JSON.parse(ev.target.result);
+        if(!['tribes','squads','chapters','guilds','people','gm'].every(k=>Array.isArray(parsed[k])))throw new Error();
+        save(clean(parsed)); setImportErr(''); setModal(null);
+      } catch { setImportErr("Invalid file — make sure you're importing a previously exported org-map.json."); }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  };
+
+  if(phase==='loading') return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:300,fontFamily:'var(--font-sans)'}}>
+      <p style={{color:'var(--color-text-secondary)',fontSize:13}}>Loading…</p>
+    </div>
+  );
+  if(phase==='restore') return <RestoreScreen onRestore={handleRestore} onStartFresh={handleStartFresh}/>;
+
+  const mBg  = modalBg(dk);
+  const mBdr = modalBdr(dk);
+  const mTx  = bodyTx(dk);
+  const mMut = mutedTx(dk);
+  const iBg  = inputBg(dk);
+  const iBdr = inputBdr(dk);
+  const iSt  = {width:'100%',boxSizing:'border-box',fontFamily:'inherit',fontSize:13,
+    background:iBg,color:mTx,border:`1px solid ${iBdr}`,borderRadius:6,padding:'6px 8px',outline:'none'};
+  const btnSt = {fontSize:13,padding:'5px 14px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',
+    background:iBg,color:mTx,border:`1px solid ${iBdr}`};
+  const btnPrimary = {...btnSt,background:dk?'#555':'#222',color:'#fff',border:'none'};
+
+  const tribesWithSquads=d.tribes.map(t=>({...t,squads:d.squads.filter(s=>s.tribeId===t.id)})).filter(t=>t.squads.length>0);
+  const flatSquads=tribesWithSquads.flatMap(t=>t.squads.map((s,i)=>({s,t,first:i===0,last:i===t.squads.length-1})));
+  const cellPeople=(chId,sqId)=>d.people.filter(p=>p.chapterId===chId&&p.squadIds.includes(sqId));
+  const personGuilds=pid=>d.guilds.filter(g=>d.gm.includes(`${pid}|${g.id}`));
+  const personPal=p=>{ const sq=getSquad(p.squadIds?.[0]); return sq?getTribe(sq.tribeId)?.pal:null; };
+  const open=(key,defs={})=>{ setF({name:'',...defs}); setImportErr(''); setModal(key); };
+  const toggleSquadSel=sid=>{ const cur=f.squadIds||[]; ff({squadIds:cur.includes(sid)?cur.filter(x=>x!==sid):[...cur,sid]}); };
+
+  const rowDivider = dk ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(0,0,0,0.2)';
+  const cellStyle=(t,first,last,extra={},rowIdx=0)=>({
+    borderBottom: rowDivider,
+    borderLeft:  first?`2px solid ${cl(t.pal,'ac')}`:`0.5px solid ${cl(t.pal,'ac')}44`,
+    borderRight: last ?`2px solid ${cl(t.pal,'ac')}`:'none',
+    backgroundColor: dk?`${t.pal.dbg}44`:`${t.pal.bg}cc`,
+    backgroundImage: rowIdx%2===1
+      ? 'linear-gradient(rgba(0,0,0,0.09),rgba(0,0,0,0.09))'
+      : 'none',
+    ...extra,
+  });
+
+  const SquadChecklist = ({ selectedIds, onToggle }) => (
+    <div style={{border:`1px solid ${iBdr}`,borderRadius:6,maxHeight:160,overflowY:'auto',padding:'4px',background:iBg}}>
+      {d.tribes.map(t=>{
+        const ts=d.squads.filter(s=>s.tribeId===t.id);
+        if(!ts.length)return null;
+        return (
+          <div key={t.id}>
+            <p style={{margin:'4px 6px 2px',fontSize:10,fontWeight:500,color:mMut,letterSpacing:'0.05em',textTransform:'uppercase'}}>{t.name}</p>
+            {ts.map(s=>(
+              <label key={s.id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 6px',cursor:'pointer',borderRadius:4,userSelect:'none'}}>
+                <input type="checkbox" checked={selectedIds.includes(s.id)} onChange={()=>onToggle(s.id)} style={{margin:0,cursor:'pointer'}}/>
+                <span style={{fontSize:13,color:mTx}}>{s.name}</span>
+              </label>
+            ))}
+          </div>
+        );
+      })}
+      {d.squads.length===0&&<p style={{margin:'8px',fontSize:12,color:mMut}}>No squads yet.</p>}
+    </div>
+  );
+
+  // Modal shell with explicit solid colors
+  const Modal = ({title, onClose, children, extra=null}) => (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()}
+      style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',
+        display:'flex',alignItems:'center',justifyContent:'center',zIndex:20}}>
+      <div style={{background:mBg,border:`1px solid ${mBdr}`,borderRadius:12,
+        padding:'1.25rem',width:340,display:'flex',flexDirection:'column',gap:10,
+        boxShadow:'0 8px 32px rgba(0,0,0,0.4)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <p style={{margin:0,fontWeight:500,fontSize:14,color:mTx}}>{title}</p>
+          {extra}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <style>{`
+        .delbtn{opacity:0;font-size:11px;padding:0 3px;border:none;background:none;color:var(--color-text-tertiary);cursor:pointer;line-height:1;flex-shrink:0}
+        .hovdel:hover .delbtn,.pcard:hover .delbtn{opacity:1}
+      `}</style>
+
+      <div style={{padding:'1rem',position:'relative',minHeight:500,fontFamily:'var(--font-sans)'}}>
+
+        <div style={{display:'flex',gap:8,marginBottom:'1rem',flexWrap:'wrap',alignItems:'center'}}>
+          <div style={{display:'flex',border:'0.5px solid var(--color-border-tertiary)',borderRadius:'var(--border-radius-md)',overflow:'hidden',flexShrink:0}}>
+            {['matrix','guilds'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)} style={{fontSize:13,padding:'5px 14px',border:'none',cursor:'pointer',fontFamily:'inherit',background:tab===t?'var(--color-background-secondary)':'transparent',color:tab===t?'var(--color-text-primary)':'var(--color-text-secondary)'}}>
+                {t.charAt(0).toUpperCase()+t.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div style={{flex:1}}/>
+          {[['+ Tribe','tribe',{}],['+ Squad','squad',{tribeId:d.tribes[0]?.id||''}],['+ Chapter','chapter',{}],['+ Guild','guild',{}],['+ Person','person',{squadIds:[],chapterId:d.chapters[0]?.id||''}]].map(([label,key,defs])=>(
+            <button key={key} onClick={()=>open(key,defs)} style={{fontSize:12}}>{label}</button>
+          ))}
+          <div style={{width:'0.5px',background:'var(--color-border-tertiary)',alignSelf:'stretch'}}/>
+          <button onClick={doExport} style={{fontSize:12}}>Export</button>
+          <button onClick={()=>open('import')} style={{fontSize:12}}>Import</button>
+        </div>
+
+        {tab==='matrix'&&(
+          flatSquads.length===0||d.chapters.length===0
+            ?<Empty>Add tribes, squads, and chapters to see the matrix.</Empty>
+            :<div style={{overflowX:'auto'}}>
+              <table style={{borderCollapse:'collapse',fontSize:13}}>
+                <thead>
+                  <tr>
+                    <td style={{minWidth:110,borderBottom:'0.5px solid var(--color-border-secondary)'}}/>
+                    {tribesWithSquads.map(t=>(
+                      <th key={t.id} colSpan={t.squads.length}
+                        style={{background:cl(t.pal,'bg'),color:cl(t.pal,'tx'),padding:'6px 10px',textAlign:'center',
+                          fontSize:11,fontWeight:500,letterSpacing:'0.04em',whiteSpace:'nowrap',
+                          borderLeft:`2px solid ${cl(t.pal,'ac')}`,borderRight:`2px solid ${cl(t.pal,'ac')}`,borderTop:`2px solid ${cl(t.pal,'ac')}`}}>
+                        <div className="hovdel" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
+                          <EditableLabel value={t.name} onSave={v=>rename('tribes',t.id,v)} dk={dk} style={{color:cl(t.pal,'tx')}}/>
+                          <button className="delbtn" onClick={()=>dels.tribe(t.id)}>×</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                  <tr>
+                    <th style={{padding:'3px 8px',textAlign:'left',color:'var(--color-text-secondary)',fontSize:11,fontWeight:400,borderBottom:'0.5px solid var(--color-border-secondary)'}}/>
+                    {flatSquads.map(({s,t,first,last})=>(
+                      <th key={s.id} style={{...cellStyle(t,first,last,{padding:'5px 8px',textAlign:'center',borderBottom:'0.5px solid var(--color-border-secondary)'}),minWidth:100}}>
+                        <div className="hovdel" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                          <span style={{fontSize:12,fontWeight:400,color:'var(--color-text-primary)',maxWidth:96,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>
+                            <EditableLabel value={s.name} onSave={v=>rename('squads',s.id,v)} dk={dk}/>
+                          </span>
+                          <button className="delbtn" onClick={()=>dels.squad(s.id)}>×</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.chapters.map((ch,i)=>(
+                    <tr key={ch.id}>
+                      <td style={{padding:'6px 8px',whiteSpace:'nowrap',background:i%2===1?'var(--color-background-secondary)':'transparent',borderBottom:rowDivider,borderRight:'0.5px solid var(--color-border-tertiary)'}}>
+                        <div className="hovdel" style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{fontSize:12,color:'var(--color-text-secondary)',fontWeight:500}}>
+                            <EditableLabel value={ch.name} onSave={v=>rename('chapters',ch.id,v)} dk={dk}/>
+                          </span>
+                          <button className="delbtn" onClick={()=>dels.chapter(ch.id)}>×</button>
+                        </div>
+                      </td>
+                      {flatSquads.map(({s,t,first,last})=>(
+                        <td key={s.id} style={{...cellStyle(t,first,last,{padding:'4px 5px',verticalAlign:'top'},i)}}>
+                          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                            {cellPeople(ch.id,s.id).map(p=>(
+                              <PersonCard key={p.id} person={p} guilds={personGuilds(p.id)}
+                                onEdit={()=>openEditPerson(p)} onRemove={()=>removeFromSquad(p.id,s.id)} dk={dk}/>
+                            ))}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        )}
+
+        {tab==='guilds'&&(
+          d.guilds.length===0
+            ?<Empty>No guilds yet. Click '+ Guild' to create one.</Empty>
+            :<div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {d.guilds.map(guild=>{
+                const members=d.people.filter(p=>d.gm.includes(`${p.id}|${guild.id}`));
+                const others=d.people.filter(p=>!d.gm.includes(`${p.id}|${guild.id}`));
+                const hBg=cl(guild.pal,'bg'),hTx=cl(guild.pal,'tx'),hAc=cl(guild.pal,'ac');
+                return (
+                  <div key={guild.id} style={{border:`1.5px solid ${hAc}`,borderRadius:'var(--border-radius-lg)',overflow:'hidden'}}>
+                    <div style={{background:hBg,padding:'6px 12px',display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontWeight:500,fontSize:13,color:hTx,flex:1}}>
+                        <EditableLabel value={guild.name} onSave={v=>rename('guilds',guild.id,v)} dk={dk} style={{color:hTx}}/>
+                      </span>
+                      <span style={{fontSize:11,color:hTx,opacity:0.7}}>({members.length} member{members.length!==1?'s':''})</span>
+                      <button className="delbtn" onClick={()=>dels.guild(guild.id)} style={{opacity:0.5,color:hTx}}>×</button>
+                    </div>
+                    <div style={{padding:'8px 12px',display:'flex',flexWrap:'wrap',gap:5,alignItems:'center',background:'var(--color-background-primary)'}}>
+                      {members.map(p=>{
+                        const sq=getSquad(p.squadIds?.[0]),tr=sq?getTribe(sq.tribeId):null;
+                        return <Chip key={p.id} name={p.name} onEdit={()=>openEditPerson(p)} sub={tr?tr.name:null} pal={personPal(p)} onDel={()=>toggleGM(p.id,guild.id)} dk={dk}/>;
+                      })}
+                      {others.length>0&&(
+                        <select onChange={e=>{if(e.target.value){toggleGM(e.target.value,guild.id);e.target.value=''}}}
+                          style={{fontSize:12,padding:'3px 6px',background:'transparent',fontFamily:'inherit',
+                            color:'var(--color-text-tertiary)',cursor:'pointer',
+                            border:`0.5px dashed ${hAc}`,borderRadius:'var(--border-radius-md)'}}>
+                          <option value="">+ add member…</option>
+                          {others.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+        )}
+
+        {editPerson&&(
+          <Modal title="Edit person" onClose={()=>setEditPerson(null)}
+            extra={
+              <button onClick={()=>{ if(window.confirm('Delete this person entirely?')){ dels.person(editPerson.id); setEditPerson(null); } }}
+                style={{fontSize:12,color:'#cc3333',border:'1px solid #cc333366',background:'none',cursor:'pointer',padding:'3px 8px',borderRadius:6}}>
+                Delete
+              </button>
+            }>
+            <input placeholder="Name" value={editPerson.name}
+              onChange={e=>setEditPerson(p=>({...p,name:e.target.value}))}
+              style={iSt}/>
+            <p style={{margin:0,fontSize:12,color:mMut}}>Squads</p>
+            <SquadChecklist selectedIds={editPerson.squadIds} onToggle={toggleEditSquad}/>
+            <select value={editPerson.chapterId} onChange={e=>setEditPerson(p=>({...p,chapterId:e.target.value}))} style={iSt}>
+              <option value="">Select chapter…</option>
+              {d.chapters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setEditPerson(null)} style={btnSt}>Cancel</button>
+              <button onClick={saveEditPerson} style={btnPrimary}>Save</button>
+            </div>
+          </Modal>
+        )}
+
+        {modal&&(
+          <Modal
+            title={{tribe:'Add tribe',squad:'Add squad',chapter:'Add chapter',guild:'Add guild',person:'Add person',import:'Import data',export:'Export data'}[modal]}
+            onClose={()=>setModal(null)}>
+            {modal==='export'&&(<>
+              <p style={{margin:0,fontSize:12,color:mMut}}>Click inside the box, then Ctrl+A / Cmd+A to select all, then copy.</p>
+              <textarea ref={exportRef} readOnly value={exportJson} onClick={()=>exportRef.current?.select()}
+                style={{width:'100%',height:200,fontSize:11,fontFamily:'var(--font-mono)',resize:'vertical',
+                  background:iBg,color:mTx,border:`1px solid ${iBdr}`,borderRadius:6,padding:'8px',
+                  boxSizing:'border-box'}}/>
+              <div style={{display:'flex',justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={btnSt}>Close</button>
+              </div>
+            </>)}
+            {modal==='import'&&(<>
+              <p style={{margin:0,fontSize:13,color:mMut}}>Load a previously exported org-map.json. Replaces current data.</p>
+              {importErr&&<p style={{margin:0,fontSize:12,color:'#cc3333'}}>{importErr}</p>}
+              <input type="file" accept=".json" onChange={doImport} style={{fontSize:13,color:mTx}}/>
+              <div style={{display:'flex',justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={btnSt}>Cancel</button>
+              </div>
+            </>)}
+            {!['export','import'].includes(modal)&&(<>
+              <input autoFocus placeholder="Name" value={f.name||''}
+                onChange={e=>ff({name:e.target.value})}
+                onKeyDown={e=>e.key==='Enter'&&modal!=='person'&&adds[modal]?.()}
+                style={iSt}/>
+              {modal==='squad'&&(
+                <select value={f.tribeId||''} onChange={e=>ff({tribeId:e.target.value})} style={iSt}>
+                  <option value="">Select tribe…</option>
+                  {d.tribes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              {modal==='person'&&(<>
+                <p style={{margin:0,fontSize:12,color:mMut}}>Squads</p>
+                <SquadChecklist selectedIds={f.squadIds||[]} onToggle={toggleSquadSel}/>
+                <select value={f.chapterId||''} onChange={e=>ff({chapterId:e.target.value})} style={iSt}>
+                  <option value="">Select chapter…</option>
+                  {d.chapters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </>)}
+              <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                <button onClick={()=>setModal(null)} style={btnSt}>Cancel</button>
+                <button onClick={adds[modal]} style={btnPrimary}>Add</button>
+              </div>
+            </>)}
+          </Modal>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Empty({children}){
+  return <div style={{textAlign:'center',padding:'3rem 1rem',color:'var(--color-text-secondary)',fontSize:13}}>{children}</div>;
+}
+
+function PersonCard({ person, guilds, onEdit, onRemove, dk }) {
+  return (
+    <div className="pcard" style={{display:'inline-flex',flexDirection:'column',gap:2,padding:'3px 6px',
+      background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',
+      borderRadius:6,maxWidth:150,minWidth:60}}>
+      <div style={{display:'flex',alignItems:'center',gap:3}}>
+        <span onClick={onEdit} title="Click to edit"
+          style={{fontSize:12,color:'var(--color-text-primary)',lineHeight:1.4,flex:1,minWidth:0,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}>
+          {person.name}
+        </span>
+        <button className="delbtn" onClick={onRemove} title="Remove from this squad" style={{marginLeft:2}}>×</button>
+      </div>
+      {guilds.length>0&&(
+        <div style={{display:'flex',flexWrap:'wrap',gap:2}}>
+          {guilds.map(g=>{
+            const gbg=dk?g.pal.dbg:g.pal.bg, gtx=dk?g.pal.dtx:g.pal.tx, gbo=dk?g.pal.dac:g.pal.ac;
+            return <span key={g.id} style={{fontSize:9,padding:'1px 5px',borderRadius:20,background:gbg,
+              color:gtx,border:`0.5px solid ${gbo}`,whiteSpace:'nowrap',lineHeight:1.6,
+              maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>{g.name}</span>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Chip({name,onEdit,sub,pal,onDel,dk}){
+  const bg=pal?(dk?pal.dbg:pal.bg):'var(--color-background-secondary)';
+  const tx=pal?(dk?pal.dtx:pal.tx):'var(--color-text-primary)';
+  const bo=pal?(dk?pal.dac:pal.ac):'var(--color-border-tertiary)';
+  const st=pal?(dk?pal.dac:pal.ac):'var(--color-text-tertiary)';
+  return (
+    <div className="pcard" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 6px',
+      background:bg,border:`0.5px solid ${bo}`,borderRadius:6,maxWidth:160,flexShrink:0}}>
+      <div style={{display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden',flex:1}}>
+        <span onClick={onEdit} title="Click to edit" style={{fontSize:12,color:tx,lineHeight:1.4,cursor:'pointer'}}>{name}</span>
+        {sub&&<span style={{fontSize:10,color:st,lineHeight:1.2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sub}</span>}
+      </div>
+      <button className="delbtn" onClick={onDel}
+        style={{opacity:0.4,fontSize:11,padding:'0 1px',border:'none',background:'none',
+          cursor:'pointer',color:tx,flexShrink:0,lineHeight:1}}
+        onMouseEnter={e=>e.currentTarget.style.opacity=1}
+        onMouseLeave={e=>e.currentTarget.style.opacity=0.4}>×</button>
+    </div>
+  );
+}
