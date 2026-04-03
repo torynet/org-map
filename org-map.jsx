@@ -23,6 +23,7 @@ const unusedPal = (existing) => { const usedAc = new Set(existing.map(x=>x.pal?.
 const INIT = { tribes:[], squads:[], chapters:[], guilds:[], people:[], gm:[] };
 const uid = () => Math.random().toString(36).slice(2,9);
 const dedupById = arr => arr.filter((x,i,a) => a.findIndex(y=>y.id===x.id)===i);
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
 
 const dedupTribes = (tribes, squads) => {
   const seen={}, idMap={}, kept=[];
@@ -328,8 +329,8 @@ export default function App() {
 
   const SquadChecklist = ({ selectedIds, onToggle }) => (
     <div style={{border:`1px solid ${iBdr}`,borderRadius:6,maxHeight:160,overflowY:'auto',padding:'4px',background:iBg}}>
-      {d.tribes.map(t=>{
-        const ts=d.squads.filter(s=>s.tribeId===t.id);
+      {[...d.tribes].sort(byName).map(t=>{
+        const ts=[...d.squads].filter(s=>s.tribeId===t.id).sort(byName);
         if(!ts.length)return null;
         return (
           <div key={t.id}>
@@ -349,8 +350,8 @@ export default function App() {
 
   const AssignmentEditor = ({ assignments, onToggleSquad, onToggleChapter }) => (
     <div style={{border:`1px solid ${iBdr}`,borderRadius:6,maxHeight:280,overflowY:'auto',padding:'4px',background:iBg}}>
-      {d.tribes.map(t=>{
-        const ts=d.squads.filter(s=>s.tribeId===t.id);
+      {[...d.tribes].sort(byName).map(t=>{
+        const ts=[...d.squads].filter(s=>s.tribeId===t.id).sort(byName);
         if(!ts.length)return null;
         return (
           <div key={t.id}>
@@ -366,7 +367,7 @@ export default function App() {
                   </label>
                   {selected&&d.chapters.length>0&&(
                     <div style={{marginLeft:24,marginBottom:4}}>
-                      {d.chapters.map(c=>(
+                      {[...d.chapters].sort(byName).map(c=>(
                         <label key={c.id} style={{display:'flex',alignItems:'center',gap:6,padding:'2px 6px',cursor:'pointer',borderRadius:4,userSelect:'none'}}>
                           <input type="checkbox" checked={assign.chapterIds.includes(c.id)} onChange={()=>onToggleChapter(s.id,c.id)} style={{margin:0,cursor:'pointer'}}/>
                           <span style={{fontSize:12,color:mMut}}>{c.name}</span>
@@ -419,7 +420,7 @@ export default function App() {
             ))}
           </div>
           <div style={{flex:1}}/>
-          {[['+ Tribe','tribe',{}],['+ Squad','squad',{tribeId:d.tribes[0]?.id||''}],['+ Chapter','chapter',{}],['+ Guild','guild',{}],['+ Person','person',{assignments:[]}]].map(([label,key,defs])=>(
+          {[['+ Tribe','tribe',{}],['+ Squad','squad',{tribeId:[...d.tribes].sort(byName)[0]?.id||''}],['+ Chapter','chapter',{}],['+ Guild','guild',{}],['+ Person','person',{assignments:[]}]].map(([label,key,defs])=>(
             <button key={key} onClick={()=>open(key,defs)} style={{fontSize:12}}>{label}</button>
           ))}
           <div style={{width:'0.5px',background:'var(--color-border-tertiary)',alignSelf:'stretch'}}/>
@@ -517,7 +518,7 @@ export default function App() {
                             color:'var(--color-text-tertiary)',cursor:'pointer',
                             border:`0.5px dashed ${hAc}`,borderRadius:'var(--border-radius-md)'}}>
                           <option value="">+ add member…</option>
-                          {others.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                          {[...others].sort(byName).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       )}
                     </div>
@@ -587,7 +588,7 @@ export default function App() {
               {modal==='squad'&&(
                 <select value={f.tribeId||''} onChange={e=>ff({tribeId:e.target.value})} style={iSt}>
                   <option value="">Select tribe…</option>
-                  {d.tribes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                  {[...d.tribes].sort(byName).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               )}
               {modal==='person'&&(<>
