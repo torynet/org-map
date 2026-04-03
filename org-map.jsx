@@ -235,6 +235,14 @@ export default function App() {
     setExportJson(json); setModal('export');
     setTimeout(()=>exportRef.current?.select(),50);
   };
+  const doDownload=()=>{
+    const json=JSON.stringify(dRef.current,null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='org-map.json'; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const doImport=e=>{
     const file=e.target.files[0]; if(!file)return;
@@ -482,12 +490,13 @@ export default function App() {
             title={{tribe:'Add tribe',squad:'Add squad',chapter:'Add chapter',guild:'Add guild',person:'Add person',import:'Import data',export:'Export data'}[modal]}
             onClose={()=>setModal(null)}>
             {modal==='export'&&(<>
-              <p style={{margin:0,fontSize:12,color:mMut}}>Click inside the box, then Ctrl+A / Cmd+A to select all, then copy.</p>
+              <p style={{margin:0,fontSize:12,color:mMut}}>Download the file or copy from the box below.</p>
               <textarea ref={exportRef} readOnly value={exportJson} onClick={()=>exportRef.current?.select()}
                 style={{width:'100%',height:200,fontSize:11,fontFamily:'var(--font-mono)',resize:'vertical',
                   background:iBg,color:mTx,border:`1px solid ${iBdr}`,borderRadius:6,padding:'8px',
                   boxSizing:'border-box'}}/>
-              <div style={{display:'flex',justifyContent:'flex-end'}}>
+              <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+                <button onClick={doDownload} style={btnSt}>Download</button>
                 <button onClick={()=>setModal(null)} style={btnSt}>Close</button>
               </div>
             </>)}
