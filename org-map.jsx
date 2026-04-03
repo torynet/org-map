@@ -1,22 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 
 const PAL = [
-  { bg:'#E6F1FB', tx:'#0C447C', ac:'#378ADD', dbg:'#0C447C', dtx:'#B5D4F4', dac:'#85B7EB' },
-  { bg:'#E1F5EE', tx:'#085041', ac:'#1D9E75', dbg:'#085041', dtx:'#9FE1CB', dac:'#5DCAA5' },
-  { bg:'#EEEDFE', tx:'#3C3489', ac:'#7F77DD', dbg:'#3C3489', dtx:'#CECBF6', dac:'#AFA9EC' },
-  { bg:'#FAEEDA', tx:'#633806', ac:'#EF9F27', dbg:'#633806', dtx:'#FAC775', dac:'#EF9F27' },
-  { bg:'#FAECE7', tx:'#4A1B0C', ac:'#D85A30', dbg:'#4A1B0C', dtx:'#F5C4B3', dac:'#F0997B' },
-  { bg:'#FBEAF0', tx:'#4B1528', ac:'#D4537E', dbg:'#4B1528', dtx:'#F4C0D1', dac:'#ED93B1' },
-  { bg:'#E9F6F8', tx:'#0A4A56', ac:'#2CA9BC', dbg:'#0A4A56', dtx:'#B9E5EC', dac:'#79CCDA' },
-  { bg:'#F1F8E9', tx:'#35540C', ac:'#79B83A', dbg:'#35540C', dtx:'#CFE8AE', dac:'#A7D874' },
-  { bg:'#FFF4E8', tx:'#6B3B09', ac:'#F28C28', dbg:'#6B3B09', dtx:'#FFD2A6', dac:'#F7B56A' },
-  { bg:'#F3ECFF', tx:'#44206B', ac:'#9A61E8', dbg:'#44206B', dtx:'#DCC7FA', dac:'#BF97F3' },
-  { bg:'#EAF4FF', tx:'#123A63', ac:'#4F8CD6', dbg:'#123A63', dtx:'#BFD8F5', dac:'#8CB7E8' },
-  { bg:'#EAF8F2', tx:'#0F4D34', ac:'#2EAD74', dbg:'#0F4D34', dtx:'#BFE8D5', dac:'#84D3AD' },
-  { bg:'#FFF0F5', tx:'#5C1837', ac:'#D9659B', dbg:'#5C1837', dtx:'#F6C3DA', dac:'#E89ABA' },
-  { bg:'#EEF3FA', tx:'#243F63', ac:'#5F86C2', dbg:'#243F63', dtx:'#C4D4ED', dac:'#96B1DB' },
-  { bg:'#FFF8E6', tx:'#6A4B07', ac:'#D9A914', dbg:'#6A4B07', dtx:'#F3DE9D', dac:'#E7C45A' },
-  { bg:'#EAF2FF', tx:'#1B3E7A', ac:'#5A8EF0', dbg:'#1B3E7A', dtx:'#BED2FA', dac:'#8EB0F5' },
+  { bg:'#FDE8E8', tx:'#5C0C0C', ac:'#D83535', dbg:'#5C0C0C', dtx:'#F5B8B8', dac:'#E86868' }, // red
+  { bg:'#FDE9E4', tx:'#5C1E08', ac:'#E05022', dbg:'#5C1E08', dtx:'#F5C4AE', dac:'#EC7858' }, // vermillion
+  { bg:'#FEF2E6', tx:'#5C3400', ac:'#F09010', dbg:'#5C3400', dtx:'#FAD0A0', dac:'#F8B040' }, // orange
+  { bg:'#FEF8E4', tx:'#524200', ac:'#D4B008', dbg:'#524200', dtx:'#F5E090', dac:'#E0CC35' }, // gold
+  { bg:'#F2F9E5', tx:'#284400', ac:'#78B815', dbg:'#284400', dtx:'#C8E890', dac:'#96D038' }, // chartreuse
+  { bg:'#E6F8E8', tx:'#083A10', ac:'#22A830', dbg:'#083A10', dtx:'#9ADCA4', dac:'#48C858' }, // green
+  { bg:'#E6F7F1', tx:'#083E28', ac:'#10A860', dbg:'#083E28', dtx:'#98DCC4', dac:'#30C880' }, // emerald
+  { bg:'#E5F7F6', tx:'#063A38', ac:'#0EA8A0', dbg:'#063A38', dtx:'#96D8D5', dac:'#28C8C0' }, // teal
+  { bg:'#E5F5FB', tx:'#063038', ac:'#0898C0', dbg:'#063038', dtx:'#96D0E8', dac:'#28B4DC' }, // cyan
+  { bg:'#E6F1FC', tx:'#082A50', ac:'#1878D0', dbg:'#082A50', dtx:'#98C8F4', dac:'#40A0EC' }, // sky
+  { bg:'#EAF0FE', tx:'#0C1858', ac:'#2850E0', dbg:'#0C1858', dtx:'#A8B8F8', dac:'#5878F0' }, // blue
+  { bg:'#EEEBFE', tx:'#180C58', ac:'#5838E0', dbg:'#180C58', dtx:'#C0B5F8', dac:'#8068EC' }, // indigo
+  { bg:'#F5E9FE', tx:'#340858', ac:'#9030D8', dbg:'#340858', dtx:'#D8A8F5', dac:'#B058EC' }, // purple
+  { bg:'#FAEAFE', tx:'#4A0850', ac:'#C028C0', dbg:'#4A0850', dtx:'#ECA8F5', dac:'#D855D8' }, // violet
+  { bg:'#FDEAF8', tx:'#500840', ac:'#CC28A0', dbg:'#500840', dtx:'#F0A8E4', dac:'#E055BC' }, // fuchsia
+  { bg:'#FDEAF1', tx:'#580820', ac:'#D82878', dbg:'#580820', dtx:'#F0A8CC', dac:'#E855A0' }, // hot pink
 ];
 const randomPal = () => PAL[Math.floor(Math.random() * PAL.length)];
 const unusedPal = (existing) => { const usedAc = new Set(existing.map(x=>x.pal?.ac).filter(Boolean)); const free = PAL.filter(p=>!usedAc.has(p.ac)); const pool = free.length ? free : PAL; return pool[Math.floor(Math.random()*pool.length)]; };
