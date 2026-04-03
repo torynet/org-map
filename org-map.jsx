@@ -53,7 +53,8 @@ const clean = raw => {
   };
   const { tribes, squads } = dedupTribes(base.tribes, base.squads);
   const guilds = base.guilds.map(g => g.pal ? g : {...g, pal:randomPal()});
-  return { ...base, tribes, squads, guilds };
+  const squadsWithPal = squads.map(s => s.pal ? s : {...s, pal:unusedPal(squads)});
+  return { ...base, tribes, squads:squadsWithPal, guilds };
 };
 
 const isEmptyData = d => !d || ['tribes','squads','chapters','guilds','people'].every(k=>d[k].length===0);
@@ -160,6 +161,7 @@ export default function App() {
   const [importErr, setImportErr] = useState('');
   const [importText, setImportText] = useState('');
   const [exportJson, setExportJson] = useState('');
+  const [palettePick, setPalettePick] = useState(null);
   const exportRef = useRef();
 
   useEffect(()=>{
@@ -197,10 +199,11 @@ export default function App() {
   const getTribe = id => d?.tribes.find(t=>t.id===id);
   const getSquad  = id => d?.squads.find(s=>s.id===id);
   const rename = (col,id,name) => save({...d,[col]:d[col].map(x=>x.id===id?{...x,name}:x)});
+  const setPal = (col,id,pal) => save({...d,[col]:d[col].map(x=>x.id===id?{...x,pal}:x)});
 
   const adds = {
     tribe:   ()=>{ if(!f.name?.trim())return; save({...d,tribes:[...d.tribes,{id:uid(),name:f.name.trim(),pal:unusedPal(d.tribes)}]}); setModal(null); },
-    squad:   ()=>{ if(!f.name?.trim()||!f.tribeId)return; save({...d,squads:[...d.squads,{id:uid(),name:f.name.trim(),tribeId:f.tribeId}]}); setModal(null); },
+    squad:   ()=>{ if(!f.name?.trim()||!f.tribeId)return; save({...d,squads:[...d.squads,{id:uid(),name:f.name.trim(),tribeId:f.tribeId,pal:unusedPal(d.squads)}]}); setModal(null); },
     chapter: ()=>{ if(!f.name?.trim())return; save({...d,chapters:[...d.chapters,{id:uid(),name:f.name.trim()}]}); setModal(null); },
     guild:   ()=>{ if(!f.name?.trim())return; save({...d,guilds:[...d.guilds,{id:uid(),name:f.name.trim(),pal:unusedPal(d.guilds)}]}); setModal(null); },
     person:  ()=>{ if(!f.name?.trim()||!f.assignments?.some(a=>a.chapterIds.length>0))return; save({...d,people:[...d.people,{id:uid(),name:f.name.trim(),assignments:f.assignments.filter(a=>a.chapterIds.length>0)}]}); setModal(null); },
@@ -316,16 +319,16 @@ export default function App() {
   const toggleChapterSel=(sid,cid)=>{ ff({assignments:(f.assignments||[]).map(a=>a.squadId===sid?{...a,chapterIds:a.chapterIds.includes(cid)?a.chapterIds.filter(x=>x!==cid):[...a.chapterIds,cid]}:a)}); };
 
   const rowDivider = dk ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(0,0,0,0.2)';
-  const cellStyle=(t,first,last,extra={},rowIdx=0)=>({
+  const cellStyle=(s,t,first,last,extra={},rowIdx=0)=>{const pal=s?.pal||t?.pal; return {
     borderBottom: rowDivider,
-    borderLeft:  first?`2px solid ${cl(t.pal,'ac')}`:`0.5px solid ${cl(t.pal,'ac')}44`,
-    borderRight: last ?`2px solid ${cl(t.pal,'ac')}`:'none',
-    backgroundColor: dk?`${t.pal.dbg}44`:`${t.pal.bg}cc`,
+    borderLeft:  first?`2px solid ${cl(pal,'ac')}`:`0.5px solid ${cl(pal,'ac')}44`,
+    borderRight: last ?`2px solid ${cl(pal,'ac')}`:'none',
+    backgroundColor: dk?`${pal.dbg}44`:`${pal.bg}cc`,
     backgroundImage: rowIdx%2===1
       ? 'linear-gradient(rgba(0,0,0,0.09),rgba(0,0,0,0.09))'
       : 'none',
     ...extra,
-  });
+  };};
 
   const SquadChecklist = ({ selectedIds, onToggle }) => (
     <div style={{border:`1px solid ${iBdr}`,borderRadius:6,maxHeight:160,overflowY:'auto',padding:'4px',background:iBg}}>
@@ -402,6 +405,29 @@ export default function App() {
     </div>
   );
 
+  const PalettePickerModal = ({item, col, onClose}) => {
+    if(!item) return null;
+    const getUnused = () => {
+      const usedAc = new Set(d[col].filter(x=>x.id!==item.id).map(x=>x.pal?.ac).filter(Boolean));
+      const free = PAL.filter(p=>!usedAc.has(p.ac));
+      return free.length ? free : PAL;
+    };
+    return (
+      <Modal title="Choose color" onClose={onClose}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+          {PAL.map((p)=>(
+            <button key={p.ac} onClick={()=>{setPal(col,item.id,p);onClose();}}
+              style={{width:'100%',aspectRatio:'1',borderRadius:8,border:item.pal===p?`3px solid ${p.ac}`:`2px solid ${p.ac}66`,
+                background:p.bg,cursor:'pointer',transition:'all 0.15s',transform:item.pal===p?'scale(1.1)':'scale(1)',
+                boxShadow:item.pal===p?`0 2px 8px ${p.ac}88`:'none'}}/>
+          ))}
+        </div>
+        <button onClick={()=>{const pool=getUnused();setPal(col,item.id,pool[Math.floor(Math.random()*pool.length)]);onClose();}}
+          style={{...btnPrimary,marginTop:4}}>Random (unused)</button>
+      </Modal>
+    );
+  };
+
   return (
     <>
       <style>{`
@@ -443,6 +469,7 @@ export default function App() {
                           borderLeft:`2px solid ${cl(t.pal,'ac')}`,borderRight:`2px solid ${cl(t.pal,'ac')}`,borderTop:`2px solid ${cl(t.pal,'ac')}`}}>
                         <div className="hovdel" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
                           <EditableLabel value={t.name} onSave={v=>rename('tribes',t.id,v)} dk={dk} style={{color:cl(t.pal,'tx')}}/>
+                          <button onClick={()=>setPalettePick({col:'tribes',item:t})} style={{width:16,height:16,borderRadius:3,border:'none',background:t.pal.ac,cursor:'pointer',padding:0,opacity:0.7}}title="Change color"/>
                           <button className="delbtn" onClick={()=>dels.tribe(t.id)}>×</button>
                         </div>
                       </th>
@@ -451,12 +478,15 @@ export default function App() {
                   <tr>
                     <th style={{padding:'3px 8px',textAlign:'left',color:'var(--color-text-secondary)',fontSize:11,fontWeight:400,borderBottom:'0.5px solid var(--color-border-secondary)'}}/>
                     {flatSquads.map(({s,t,first,last})=>(
-                      <th key={s.id} style={{...cellStyle(t,first,last,{padding:'5px 8px',textAlign:'center',borderBottom:'0.5px solid var(--color-border-secondary)'}),minWidth:100}}>
+                      <th key={s.id} style={{...cellStyle(s,t,first,last,{padding:'5px 8px',textAlign:'center',borderBottom:'0.5px solid var(--color-border-secondary)'}),minWidth:100}}>
                         <div className="hovdel" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
                           <span style={{fontSize:12,fontWeight:400,color:'var(--color-text-primary)',maxWidth:96,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>
                             <EditableLabel value={s.name} onSave={v=>rename('squads',s.id,v)} dk={dk}/>
                           </span>
-                          <button className="delbtn" onClick={()=>dels.squad(s.id)}>×</button>
+                          <div style={{display:'flex',gap:2,alignItems:'center'}}>
+                            <button onClick={()=>setPalettePick({col:'squads',item:s})} style={{width:12,height:12,borderRadius:2,border:'none',background:s.pal?.ac||t.pal.ac,cursor:'pointer',padding:0,opacity:0.6}}title="Change color"/>
+                            <button className="delbtn" onClick={()=>dels.squad(s.id)}>×</button>
+                          </div>
                         </div>
                       </th>
                     ))}
@@ -474,7 +504,7 @@ export default function App() {
                         </div>
                       </td>
                       {flatSquads.map(({s,t,first,last})=>(
-                        <td key={s.id} style={{...cellStyle(t,first,last,{padding:'4px 5px',verticalAlign:'top'},i)}}>
+                        <td key={s.id} style={{...cellStyle(s,t,first,last,{padding:'4px 5px',verticalAlign:'top'},i)}}>
                           <div style={{display:'flex',flexDirection:'column',gap:3}}>
                             {cellPeople(ch.id,s.id).map(p=>(
                               <PersonCard key={p.id} person={p} guilds={personGuilds(p.id)}
@@ -505,6 +535,7 @@ export default function App() {
                         <EditableLabel value={guild.name} onSave={v=>rename('guilds',guild.id,v)} dk={dk} style={{color:hTx}}/>
                       </span>
                       <span style={{fontSize:11,color:hTx,opacity:0.7}}>({members.length} member{members.length!==1?'s':''})</span>
+                      <button onClick={()=>setPalettePick({col:'guilds',item:guild})} style={{width:16,height:16,borderRadius:3,border:'1px solid',borderColor:hAc,background:hBg,cursor:'pointer',padding:0,opacity:0.7}}title="Change color"/>
                       <button className="delbtn" onClick={()=>dels.guild(guild.id)} style={{opacity:0.5,color:hTx}}>×</button>
                     </div>
                     <div style={{padding:'8px 12px',display:'flex',flexWrap:'wrap',gap:5,alignItems:'center',background:'var(--color-background-primary)'}}>
@@ -603,6 +634,10 @@ export default function App() {
               </div>
             </>)}
           </Modal>
+        )}
+
+        {palettePick&&(
+          <PalettePickerModal item={palettePick.item} col={palettePick.col} onClose={()=>setPalettePick(null)}/>
         )}
       </div>
     </>
