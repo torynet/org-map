@@ -7,6 +7,16 @@ const PAL = [
   { bg:'#FAEEDA', tx:'#633806', ac:'#EF9F27', dbg:'#633806', dtx:'#FAC775', dac:'#EF9F27' },
   { bg:'#FAECE7', tx:'#4A1B0C', ac:'#D85A30', dbg:'#4A1B0C', dtx:'#F5C4B3', dac:'#F0997B' },
   { bg:'#FBEAF0', tx:'#4B1528', ac:'#D4537E', dbg:'#4B1528', dtx:'#F4C0D1', dac:'#ED93B1' },
+  { bg:'#E9F6F8', tx:'#0A4A56', ac:'#2CA9BC', dbg:'#0A4A56', dtx:'#B9E5EC', dac:'#79CCDA' },
+  { bg:'#F1F8E9', tx:'#35540C', ac:'#79B83A', dbg:'#35540C', dtx:'#CFE8AE', dac:'#A7D874' },
+  { bg:'#FFF4E8', tx:'#6B3B09', ac:'#F28C28', dbg:'#6B3B09', dtx:'#FFD2A6', dac:'#F7B56A' },
+  { bg:'#F3ECFF', tx:'#44206B', ac:'#9A61E8', dbg:'#44206B', dtx:'#DCC7FA', dac:'#BF97F3' },
+  { bg:'#EAF4FF', tx:'#123A63', ac:'#4F8CD6', dbg:'#123A63', dtx:'#BFD8F5', dac:'#8CB7E8' },
+  { bg:'#EAF8F2', tx:'#0F4D34', ac:'#2EAD74', dbg:'#0F4D34', dtx:'#BFE8D5', dac:'#84D3AD' },
+  { bg:'#FFF0F5', tx:'#5C1837', ac:'#D9659B', dbg:'#5C1837', dtx:'#F6C3DA', dac:'#E89ABA' },
+  { bg:'#EEF3FA', tx:'#243F63', ac:'#5F86C2', dbg:'#243F63', dtx:'#C4D4ED', dac:'#96B1DB' },
+  { bg:'#FFF8E6', tx:'#6A4B07', ac:'#D9A914', dbg:'#6A4B07', dtx:'#F3DE9D', dac:'#E7C45A' },
+  { bg:'#EAF2FF', tx:'#1B3E7A', ac:'#5A8EF0', dbg:'#1B3E7A', dtx:'#BED2FA', dac:'#8EB0F5' },
 ];
 const randomPal = () => PAL[Math.floor(Math.random() * PAL.length)];
 const unusedPal = (existing) => { const usedAc = new Set(existing.map(x=>x.pal?.ac).filter(Boolean)); const free = PAL.filter(p=>!usedAc.has(p.ac)); const pool = free.length ? free : PAL; return pool[Math.floor(Math.random()*pool.length)]; };
