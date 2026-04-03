@@ -147,6 +147,7 @@ export default function App() {
   const [editPerson, setEditPerson] = useState(null);
   const [dk, setDk] = useState(false);
   const [importErr, setImportErr] = useState('');
+  const [importText, setImportText] = useState('');
   const [exportJson, setExportJson] = useState('');
   const exportRef = useRef();
 
@@ -255,18 +256,24 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const tryImportJson=json=>{
+    const parsed=JSON.parse(json);
+    if(!['tribes','squads','chapters','guilds','people','gm'].every(k=>Array.isArray(parsed[k])))throw new Error();
+    save(clean(parsed)); setImportErr(''); setImportText(''); setModal(null);
+  };
   const doImport=e=>{
     const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
     reader.onload=ev=>{
-      try {
-        const parsed=JSON.parse(ev.target.result);
-        if(!['tribes','squads','chapters','guilds','people','gm'].every(k=>Array.isArray(parsed[k])))throw new Error();
-        save(clean(parsed)); setImportErr(''); setModal(null);
-      } catch { setImportErr("Invalid file — make sure you're importing a previously exported org-map.json."); }
+      try { tryImportJson(ev.target.result); }
+      catch { setImportErr("Invalid file — make sure you're importing a previously exported org-map.json."); }
     };
     reader.readAsText(file);
     e.target.value='';
+  };
+  const doImportPaste=()=>{
+    try { tryImportJson(importText.trim()); }
+    catch { setImportErr("Could not parse that JSON. Make sure you're pasting a full export from this app."); }
   };
 
   if(phase==='loading') return (
@@ -293,7 +300,7 @@ export default function App() {
   const cellPeople=(chId,sqId)=>d.people.filter(p=>p.assignments.some(a=>a.squadId===sqId&&a.chapterIds.includes(chId)));
   const personGuilds=pid=>d.guilds.filter(g=>d.gm.includes(`${pid}|${g.id}`));
   const personPal=p=>{ const sq=getSquad(p.assignments?.[0]?.squadId); return sq?getTribe(sq.tribeId)?.pal:null; };
-  const open=(key,defs={})=>{ setF({name:'',...defs}); setImportErr(''); setModal(key); };
+  const open=(key,defs={})=>{ setF({name:'',...defs}); setImportErr(''); setImportText(''); setModal(key); };
   const toggleSquadSel=sid=>{ const cur=f.assignments||[]; ff({assignments:cur.some(a=>a.squadId===sid)?cur.filter(a=>a.squadId!==sid):[...cur,{squadId:sid,chapterIds:[]}]}); };
   const toggleChapterSel=(sid,cid)=>{ ff({assignments:(f.assignments||[]).map(a=>a.squadId===sid?{...a,chapterIds:a.chapterIds.includes(cid)?a.chapterIds.filter(x=>x!==cid):[...a.chapterIds,cid]}:a)}); };
 
@@ -549,11 +556,17 @@ export default function App() {
               </div>
             </>)}
             {modal==='import'&&(<>
-              <p style={{margin:0,fontSize:13,color:mMut}}>Load a previously exported org-map.json. Replaces current data.</p>
+              <p style={{margin:0,fontSize:13,color:mMut}}>Load a file or paste exported JSON. Replaces current data.</p>
               {importErr&&<p style={{margin:0,fontSize:12,color:'#cc3333'}}>{importErr}</p>}
               <input type="file" accept=".json" onChange={doImport} style={{fontSize:13,color:mTx}}/>
-              <div style={{display:'flex',justifyContent:'flex-end'}}>
+              <p style={{margin:0,fontSize:12,color:mMut,textAlign:'center'}}>— or paste JSON —</p>
+              <textarea value={importText} onChange={e=>setImportText(e.target.value)} placeholder="Paste exported JSON here…"
+                style={{width:'100%',height:120,fontSize:11,fontFamily:'var(--font-mono)',resize:'vertical',
+                  background:iBg,color:mTx,border:`1px solid ${iBdr}`,borderRadius:6,padding:'8px',
+                  boxSizing:'border-box'}}/>
+              <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
                 <button onClick={()=>setModal(null)} style={btnSt}>Cancel</button>
+                <button onClick={doImportPaste} disabled={!importText.trim()} style={btnPrimary}>Import</button>
               </div>
             </>)}
             {!['export','import'].includes(modal)&&(<>
