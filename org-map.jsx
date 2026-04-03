@@ -24,9 +24,12 @@ const dedupTribes = (tribes, squads) => {
   return { tribes:kept, squads:squads.map(s=>idMap[s.tribeId]?{...s,tribeId:idMap[s.tribeId]}:s) };
 };
 
-const migratePerson = ({ squadId, ...p }) => ({
-  ...p, squadIds: p.squadIds?.length ? p.squadIds : (squadId ? [squadId] : []),
-});
+const migratePerson = ({ squadId, squadIds, chapterId, ...p }) => {
+  const sids = p.assignments ? [] : (squadIds?.length ? squadIds : (squadId ? [squadId] : []));
+  if (p.assignments?.length) return p;
+  const cid = chapterId || null;
+  return { ...p, assignments: sids.map(sid => ({ squadId: sid, chapterIds: cid ? [cid] : [] })) };
+};
 
 const clean = raw => {
   const base = {
@@ -188,27 +191,28 @@ export default function App() {
     squad:   ()=>{ if(!f.name?.trim()||!f.tribeId)return; save({...d,squads:[...d.squads,{id:uid(),name:f.name.trim(),tribeId:f.tribeId}]}); setModal(null); },
     chapter: ()=>{ if(!f.name?.trim())return; save({...d,chapters:[...d.chapters,{id:uid(),name:f.name.trim()}]}); setModal(null); },
     guild:   ()=>{ if(!f.name?.trim())return; save({...d,guilds:[...d.guilds,{id:uid(),name:f.name.trim(),pal:unusedPal(d.guilds)}]}); setModal(null); },
-    person:  ()=>{ if(!f.name?.trim()||!f.squadIds?.length||!f.chapterId)return; save({...d,people:[...d.people,{id:uid(),name:f.name.trim(),squadIds:f.squadIds,chapterId:f.chapterId}]}); setModal(null); },
+    person:  ()=>{ if(!f.name?.trim()||!f.assignments?.some(a=>a.chapterIds.length>0))return; save({...d,people:[...d.people,{id:uid(),name:f.name.trim(),assignments:f.assignments.filter(a=>a.chapterIds.length>0)}]}); setModal(null); },
   };
 
   const dels = {
     tribe: id=>{
       const sids=d.squads.filter(s=>s.tribeId===id).map(s=>s.id);
-      const np=d.people.map(p=>({...p,squadIds:p.squadIds.filter(sid=>!sids.includes(sid))}));
-      const rm=np.filter(p=>p.squadIds.length===0).map(p=>p.id);
+      const np=d.people.map(p=>({...p,assignments:p.assignments.filter(a=>!sids.includes(a.squadId))}));
+      const rm=np.filter(p=>p.assignments.length===0).map(p=>p.id);
       save({...d,tribes:d.tribes.filter(t=>t.id!==id),squads:d.squads.filter(s=>s.tribeId!==id),
-        people:np.filter(p=>p.squadIds.length>0),gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
+        people:np.filter(p=>p.assignments.length>0),gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
     },
     squad: id=>{
-      const np=d.people.map(p=>({...p,squadIds:p.squadIds.filter(sid=>sid!==id)}));
-      const rm=np.filter(p=>p.squadIds.length===0).map(p=>p.id);
-      save({...d,squads:d.squads.filter(s=>s.id!==id),people:np.filter(p=>p.squadIds.length>0),
+      const np=d.people.map(p=>({...p,assignments:p.assignments.filter(a=>a.squadId!==id)}));
+      const rm=np.filter(p=>p.assignments.length===0).map(p=>p.id);
+      save({...d,squads:d.squads.filter(s=>s.id!==id),people:np.filter(p=>p.assignments.length>0),
         gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
     },
     chapter: id=>{
-      const pids=d.people.filter(p=>p.chapterId===id).map(p=>p.id);
-      save({...d,chapters:d.chapters.filter(c=>c.id!==id),people:d.people.filter(p=>p.chapterId!==id),
-        gm:d.gm.filter(m=>!pids.some(pid=>m.startsWith(pid+'|')))});
+      const np=d.people.map(p=>({...p,assignments:p.assignments.map(a=>({...a,chapterIds:a.chapterIds.filter(c=>c!==id)})).filter(a=>a.chapterIds.length>0)}));
+      const rm=np.filter(p=>p.assignments.length===0).map(p=>p.id);
+      save({...d,chapters:d.chapters.filter(c=>c.id!==id),people:np.filter(p=>p.assignments.length>0),
+        gm:d.gm.filter(m=>!rm.some(pid=>m.startsWith(pid+'|')))});
     },
     guild:  id=>save({...d,guilds:d.guilds.filter(g=>g.id!==id),gm:d.gm.filter(m=>!m.endsWith('|'+id))}),
     person: id=>save({...d,people:d.people.filter(p=>p.id!==id),gm:d.gm.filter(m=>!m.startsWith(id+'|'))}),
@@ -216,18 +220,25 @@ export default function App() {
 
   const removeFromSquad = (personId, squadId) => {
     const p=d.people.find(x=>x.id===personId); if(!p)return;
-    const newIds=p.squadIds.filter(sid=>sid!==squadId);
-    if(newIds.length===0) dels.person(personId);
-    else save({...d,people:d.people.map(x=>x.id===personId?{...x,squadIds:newIds}:x)});
+    const newAssign=p.assignments.filter(a=>a.squadId!==squadId);
+    if(newAssign.length===0) dels.person(personId);
+    else save({...d,people:d.people.map(x=>x.id===personId?{...x,assignments:newAssign}:x)});
   };
 
-  const openEditPerson = p => setEditPerson({id:p.id,name:p.name,squadIds:[...p.squadIds],chapterId:p.chapterId});
+  const openEditPerson = p => setEditPerson({id:p.id,name:p.name,assignments:p.assignments.map(a=>({squadId:a.squadId,chapterIds:[...a.chapterIds]}))});
   const saveEditPerson = () => {
-    if(!editPerson.name.trim()||!editPerson.squadIds.length||!editPerson.chapterId)return;
-    save({...d,people:d.people.map(p=>p.id===editPerson.id?{...p,name:editPerson.name.trim(),squadIds:editPerson.squadIds,chapterId:editPerson.chapterId}:p)});
+    const valid=editPerson.assignments.filter(a=>a.chapterIds.length>0);
+    if(!editPerson.name.trim()||!valid.length)return;
+    save({...d,people:d.people.map(p=>p.id===editPerson.id?{...p,name:editPerson.name.trim(),assignments:valid}:p)});
     setEditPerson(null);
   };
-  const toggleEditSquad = sid => setEditPerson(prev=>({...prev,squadIds:prev.squadIds.includes(sid)?prev.squadIds.filter(x=>x!==sid):[...prev.squadIds,sid]}));
+  const toggleEditSquad = sid => setEditPerson(prev=>{
+    const has=prev.assignments.some(a=>a.squadId===sid);
+    return {...prev,assignments:has?prev.assignments.filter(a=>a.squadId!==sid):[...prev.assignments,{squadId:sid,chapterIds:[]}]};
+  });
+  const toggleEditChapter = (sid,cid) => setEditPerson(prev=>({
+    ...prev,assignments:prev.assignments.map(a=>a.squadId===sid?{...a,chapterIds:a.chapterIds.includes(cid)?a.chapterIds.filter(x=>x!==cid):[...a.chapterIds,cid]}:a)
+  }));
   const toggleGM=(pid,gid)=>{ const k=`${pid}|${gid}`; save({...d,gm:d.gm.includes(k)?d.gm.filter(m=>m!==k):[...d.gm,k]}); };
 
   const doExport=()=>{
@@ -279,11 +290,12 @@ export default function App() {
 
   const tribesWithSquads=d.tribes.map(t=>({...t,squads:d.squads.filter(s=>s.tribeId===t.id)})).filter(t=>t.squads.length>0);
   const flatSquads=tribesWithSquads.flatMap(t=>t.squads.map((s,i)=>({s,t,first:i===0,last:i===t.squads.length-1})));
-  const cellPeople=(chId,sqId)=>d.people.filter(p=>p.chapterId===chId&&p.squadIds.includes(sqId));
+  const cellPeople=(chId,sqId)=>d.people.filter(p=>p.assignments.some(a=>a.squadId===sqId&&a.chapterIds.includes(chId)));
   const personGuilds=pid=>d.guilds.filter(g=>d.gm.includes(`${pid}|${g.id}`));
-  const personPal=p=>{ const sq=getSquad(p.squadIds?.[0]); return sq?getTribe(sq.tribeId)?.pal:null; };
+  const personPal=p=>{ const sq=getSquad(p.assignments?.[0]?.squadId); return sq?getTribe(sq.tribeId)?.pal:null; };
   const open=(key,defs={})=>{ setF({name:'',...defs}); setImportErr(''); setModal(key); };
-  const toggleSquadSel=sid=>{ const cur=f.squadIds||[]; ff({squadIds:cur.includes(sid)?cur.filter(x=>x!==sid):[...cur,sid]}); };
+  const toggleSquadSel=sid=>{ const cur=f.assignments||[]; ff({assignments:cur.some(a=>a.squadId===sid)?cur.filter(a=>a.squadId!==sid):[...cur,{squadId:sid,chapterIds:[]}]}); };
+  const toggleChapterSel=(sid,cid)=>{ ff({assignments:(f.assignments||[]).map(a=>a.squadId===sid?{...a,chapterIds:a.chapterIds.includes(cid)?a.chapterIds.filter(x=>x!==cid):[...a.chapterIds,cid]}:a)}); };
 
   const rowDivider = dk ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(0,0,0,0.2)';
   const cellStyle=(t,first,last,extra={},rowIdx=0)=>({
@@ -311,6 +323,43 @@ export default function App() {
                 <span style={{fontSize:13,color:mTx}}>{s.name}</span>
               </label>
             ))}
+          </div>
+        );
+      })}
+      {d.squads.length===0&&<p style={{margin:'8px',fontSize:12,color:mMut}}>No squads yet.</p>}
+    </div>
+  );
+
+  const AssignmentEditor = ({ assignments, onToggleSquad, onToggleChapter }) => (
+    <div style={{border:`1px solid ${iBdr}`,borderRadius:6,maxHeight:280,overflowY:'auto',padding:'4px',background:iBg}}>
+      {d.tribes.map(t=>{
+        const ts=d.squads.filter(s=>s.tribeId===t.id);
+        if(!ts.length)return null;
+        return (
+          <div key={t.id}>
+            <p style={{margin:'4px 6px 2px',fontSize:10,fontWeight:500,color:mMut,letterSpacing:'0.05em',textTransform:'uppercase'}}>{t.name}</p>
+            {ts.map(s=>{
+              const assign=assignments.find(a=>a.squadId===s.id);
+              const selected=!!assign;
+              return (
+                <div key={s.id}>
+                  <label style={{display:'flex',alignItems:'center',gap:6,padding:'4px 6px',cursor:'pointer',borderRadius:4,userSelect:'none'}}>
+                    <input type="checkbox" checked={selected} onChange={()=>onToggleSquad(s.id)} style={{margin:0,cursor:'pointer'}}/>
+                    <span style={{fontSize:13,color:mTx,fontWeight:selected?500:400}}>{s.name}</span>
+                  </label>
+                  {selected&&d.chapters.length>0&&(
+                    <div style={{marginLeft:24,marginBottom:4}}>
+                      {d.chapters.map(c=>(
+                        <label key={c.id} style={{display:'flex',alignItems:'center',gap:6,padding:'2px 6px',cursor:'pointer',borderRadius:4,userSelect:'none'}}>
+                          <input type="checkbox" checked={assign.chapterIds.includes(c.id)} onChange={()=>onToggleChapter(s.id,c.id)} style={{margin:0,cursor:'pointer'}}/>
+                          <span style={{fontSize:12,color:mMut}}>{c.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -353,7 +402,7 @@ export default function App() {
             ))}
           </div>
           <div style={{flex:1}}/>
-          {[['+ Tribe','tribe',{}],['+ Squad','squad',{tribeId:d.tribes[0]?.id||''}],['+ Chapter','chapter',{}],['+ Guild','guild',{}],['+ Person','person',{squadIds:[],chapterId:d.chapters[0]?.id||''}]].map(([label,key,defs])=>(
+          {[['+ Tribe','tribe',{}],['+ Squad','squad',{tribeId:d.tribes[0]?.id||''}],['+ Chapter','chapter',{}],['+ Guild','guild',{}],['+ Person','person',{assignments:[]}]].map(([label,key,defs])=>(
             <button key={key} onClick={()=>open(key,defs)} style={{fontSize:12}}>{label}</button>
           ))}
           <div style={{width:'0.5px',background:'var(--color-border-tertiary)',alignSelf:'stretch'}}/>
@@ -442,7 +491,7 @@ export default function App() {
                     </div>
                     <div style={{padding:'8px 12px',display:'flex',flexWrap:'wrap',gap:5,alignItems:'center',background:'var(--color-background-primary)'}}>
                       {members.map(p=>{
-                        const sq=getSquad(p.squadIds?.[0]),tr=sq?getTribe(sq.tribeId):null;
+                        const sq=getSquad(p.assignments?.[0]?.squadId),tr=sq?getTribe(sq.tribeId):null;
                         return <Chip key={p.id} name={p.name} onEdit={()=>openEditPerson(p)} sub={tr?tr.name:null} pal={personPal(p)} onDel={()=>toggleGM(p.id,guild.id)} dk={dk}/>;
                       })}
                       {others.length>0&&(
@@ -472,12 +521,10 @@ export default function App() {
             <input placeholder="Name" value={editPerson.name}
               onChange={e=>setEditPerson(p=>({...p,name:e.target.value}))}
               style={iSt}/>
-            <p style={{margin:0,fontSize:12,color:mMut}}>Squads</p>
-            <SquadChecklist selectedIds={editPerson.squadIds} onToggle={toggleEditSquad}/>
-            <select value={editPerson.chapterId} onChange={e=>setEditPerson(p=>({...p,chapterId:e.target.value}))} style={iSt}>
-              <option value="">Select chapter…</option>
-              {d.chapters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <p style={{margin:0,fontSize:12,color:mMut}}>Squads & Chapters</p>
+            <AssignmentEditor assignments={editPerson.assignments}
+              onToggleSquad={toggleEditSquad}
+              onToggleChapter={toggleEditChapter}/>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setEditPerson(null)} style={btnSt}>Cancel</button>
               <button onClick={saveEditPerson} style={btnPrimary}>Save</button>
@@ -520,12 +567,10 @@ export default function App() {
                 </select>
               )}
               {modal==='person'&&(<>
-                <p style={{margin:0,fontSize:12,color:mMut}}>Squads</p>
-                <SquadChecklist selectedIds={f.squadIds||[]} onToggle={toggleSquadSel}/>
-                <select value={f.chapterId||''} onChange={e=>ff({chapterId:e.target.value})} style={iSt}>
-                  <option value="">Select chapter…</option>
-                  {d.chapters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <p style={{margin:0,fontSize:12,color:mMut}}>Squads & Chapters</p>
+                <AssignmentEditor assignments={f.assignments||[]}
+                  onToggleSquad={toggleSquadSel}
+                  onToggleChapter={toggleChapterSel}/>
               </>)}
               <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
                 <button onClick={()=>setModal(null)} style={btnSt}>Cancel</button>
