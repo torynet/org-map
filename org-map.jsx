@@ -543,6 +543,7 @@ export default function App() {
                   background:iBg,color:mTx,border:`1px solid ${iBdr}`,borderRadius:6,padding:'8px',
                   boxSizing:'border-box'}}/>
               <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+                <button onClick={()=>navigator.clipboard.writeText(exportJson)} style={btnSt}>Copy</button>
                 <button onClick={doDownload} style={btnSt}>Download</button>
                 <button onClick={()=>setModal(null)} style={btnSt}>Close</button>
               </div>
