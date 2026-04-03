@@ -417,7 +417,7 @@ export default function App() {
           {PAL.map((p)=>(
             <button key={p.ac} onClick={()=>{setPal(col,item.id,p);onClose();}}
               style={{width:'100%',aspectRatio:'1',borderRadius:8,border:item.pal===p?`3px solid ${p.ac}`:`2px solid ${p.ac}66`,
-                background:p.bg,cursor:'pointer',transition:'all 0.15s',transform:item.pal===p?'scale(1.1)':'scale(1)',
+                background:p.ac,cursor:'pointer',transition:'all 0.15s',transform:item.pal===p?'scale(1.1)':'scale(1)',
                 boxShadow:item.pal===p?`0 2px 8px ${p.ac}88`:'none'}}/>
           ))}
         </div>
